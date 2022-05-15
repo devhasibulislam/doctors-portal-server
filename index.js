@@ -56,15 +56,49 @@ async function run() {
 
             const result = await bookingCollection.insertOne(booking);
 
-            return res.send({success: true, result});
+            return res.send({ success: true, result });
         })
 
-        // find bookings
+        // get all bookings
         app.get('/bookings', async (req, res) => {
-            const cursor = bookingCollection.find({});
-            const bookings = await cursor.toArray();
+            const patientEmail = req.query.email;
+            const query = { patientEmail: patientEmail };
+            const bookings = await bookingCollection.find(query).toArray();
 
             res.send(bookings);
+        })
+
+        /**
+         * find bookings
+         * this is not the proper way
+         * it's risky but for learning purpose it's okay
+         * should have to learn in advance way
+         * after learning mongodb properly then do following:
+         * use aggregate function, lookup, pipeline, match, group
+        */
+        app.get('/available', async (req, res) => {
+            const date = req.query.date;
+
+            /* step 1: find all services */
+            const services = await serviceCollection.find({}).toArray();
+
+            /* step 2: get the booking for that specific date */
+            const query = { appointmentDate: date };
+            const bookings = await bookingCollection.find(query).toArray();
+
+            /* step 3: for each service find bookings for that service */
+            services.forEach(service => {
+                // step 1: get service bookings with respect services
+                const serviceBookings = bookings.filter(booking => service.name === booking.treatmentName);
+                // step 2: make a view of booked time for each service
+                const booked = serviceBookings.map(serviceBooking => serviceBooking.appointmentTime);
+                service.booked = booked;
+                // step 3: display available time exclude booked one
+                const available = service.slots.filter(svc => !booked.includes(svc));
+                service.slots = available;
+            })
+
+            res.send(services);
         })
     } finally {
         client.close();
