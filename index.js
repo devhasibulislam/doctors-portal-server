@@ -23,15 +23,48 @@ const client = new MongoClient(uri, {
 async function run() {
     try {
         client.connect();
-        const servicesCollection = client.db("doctorsPortal").collection("services");
+        const serviceCollection = client.db("doctorsPortal").collection("services");
+        const bookingCollection = client.db("doctorsPortal").collection("bookings");
         console.log('doctors portal connected successfully!');
-        
+
+        /**
+         * API naming convention
+         * app.get('/bookings') // get all bookings within a specific collection
+         * app.get('/booking/:id') // get a specific booking within a specific collection
+         * app.post('/booking') // add a new booking within a specific collection
+         * app.patch('/booking/:id') // update a specific booking within a specific collection
+         * app.delete('/booking/:id') // delete a specific booking from a specific collection
+        */
+
         // find services
         app.get('/services', async (req, res) => {
-            const cursor = servicesCollection.find({});
+            const cursor = serviceCollection.find({});
             const services = await cursor.toArray();
-            
+
             res.send(services);
+        })
+
+        // add new booking
+        app.post('/booking', async (req, res) => {
+            const booking = req.body;
+            const query = { treatmentName: booking.treatmentName, patientName: booking.patientName, appointmentDate: booking.appointmentDate };
+            const existBooking = await bookingCollection.findOne(query);
+
+            if (existBooking) {
+                return res.send({ success: false, result: existBooking });
+            }
+
+            const result = await bookingCollection.insertOne(booking);
+
+            return res.send({success: true, result});
+        })
+
+        // find bookings
+        app.get('/bookings', async (req, res) => {
+            const cursor = bookingCollection.find({});
+            const bookings = await cursor.toArray();
+
+            res.send(bookings);
         })
     } finally {
         client.close();
