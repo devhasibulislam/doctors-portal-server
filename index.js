@@ -20,11 +20,27 @@ const client = new MongoClient(uri, {
     serverApi: ServerApiVersion.v1
 });
 
+function verifyJWT(req, res, next) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+        return res.status(401).send({ message: "unauthorized access" });
+    }
+    const token = authHeader.split(' ')[1];
+    jwt.verify(token, process.env.PRIVATE_KEY, (err, decoded) => {
+        if (err) {
+            return res.status(403).send({ message: "forbidden access" });
+        }
+        req.decoded = decoded;
+        next();
+    })
+}
+
 async function run() {
     try {
         client.connect();
         const serviceCollection = client.db("doctorsPortal").collection("services");
         const bookingCollection = client.db("doctorsPortal").collection("bookings");
+        const userCollection = client.db("doctorsPortal").collection("user");
         console.log('doctors portal connected successfully!');
 
         /**
@@ -60,12 +76,17 @@ async function run() {
         })
 
         // get all bookings
-        app.get('/bookings', async (req, res) => {
+        app.get('/bookings', verifyJWT, async (req, res) => {
             const patientEmail = req.query.email;
-            const query = { patientEmail: patientEmail };
-            const bookings = await bookingCollection.find(query).toArray();
-
-            res.send(bookings);
+            const decodedEmail = req.decoded.email;
+            
+            if (patientEmail === decodedEmail) {
+                const query = { patientEmail: patientEmail };
+                const bookings = await bookingCollection.find(query).toArray();
+                res.send(bookings);
+            } else {
+                res.status(403).send({ message: "forbidden access" });
+            }
         })
 
         /**
@@ -99,6 +120,26 @@ async function run() {
             })
 
             res.send(services);
+        })
+
+        // add/update user
+        app.put('/user/:email', async (req, res) => {
+            const email = req.params.email;
+            const user = req.body;
+            const filter = { email: email };
+            const options = { upsert: true };
+            const updateDoc = {
+                $set: user
+            };
+            const result = await userCollection.updateOne(filter, updateDoc, options);
+            const token = jwt.sign({ email: email }, process.env.PRIVATE_KEY, { expiresIn: '1d' });
+            res.send({result, token});
+        })
+
+        // display users
+        app.get('/user', verifyJWT, async (req, res) => {
+            const users = await userCollection.find({}).toArray();
+            res.send(users);
         })
     } finally {
         client.close();
